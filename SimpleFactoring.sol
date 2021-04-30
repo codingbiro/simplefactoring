@@ -15,7 +15,7 @@ contract SimpleFactoring {
         uint256 dueDate; // Deadline of payment
         address payer; // Customer
         bool settled; // If true, the invoice has been paid
-        uint256 total; // Amount to be paid in Ether
+        uint256 total; // Amount to be paid in Wei
         uint256 resellPrice; // Invoice price in case of a sale
     }
 
@@ -32,7 +32,7 @@ contract SimpleFactoring {
 
     Offer[] private offers;
 
-    struct PayableInvoice {        
+    struct PayableInvoice {
         Invoice invoice; // Invoice to be sold
         address payable beneficiary; // Beneficiary of the invoice
     }
@@ -76,8 +76,6 @@ contract SimpleFactoring {
             );
         _;
     }
-    
-    // Helper methods
 
     /**
      * @dev Set contract deployer as boss
@@ -86,11 +84,14 @@ contract SimpleFactoring {
         boss = payable(msg.sender);
     }
     
+    // Helper methods
+    // *** ALWAYS PRIVATE FUNCTIONS ***
+    
      /**
      * @dev Function to create an invoice object for sender
      * @param dueDate Timestamp of payment deadline
      * @param payer Address of customer
-     * @param total Amount of money to be paid for the invoice in Ether
+     * @param total Amount of money to be paid for the invoice in Wei
      * @param resellPrice Selling price of invoice
      */
     function createInvoiceForSender(
@@ -112,6 +113,15 @@ contract SimpleFactoring {
         }
         invoiceCount++;
         invoices[msg.sender].push(invoice);        
+    }
+    
+    /**
+     * @dev Function to calculate price with commision
+     * @param price Price before commision
+     * @return Price with commision
+     */
+    function getPriceWithCommision(uint256 price) private view returns (uint256) {
+        return price - (price*commision)/100;
     }
 
     // Boss methods
@@ -139,6 +149,7 @@ contract SimpleFactoring {
      * @return User's invoices in an array
      */
     function getInvoices() public view returns (Invoice[] memory) {
+        require(invoices[msg.sender].length > 0, "No invoices");
         return invoices[msg.sender];
     }
 
@@ -146,7 +157,7 @@ contract SimpleFactoring {
      * @dev Create an invoice
      * @param dueDate Timestamp of payment deadline
      * @param payer Address of customer
-     * @param total Amount of money to be paid for the invoice in Ether
+     * @param total Amount of money to be paid for the invoice in Wei
      */
     function createInvoice(
         uint256 dueDate,
@@ -162,7 +173,7 @@ contract SimpleFactoring {
      */
     function getOverDueCount() public view returns (uint256 counter_) {
         for (uint256 i = 0; i < invoices[msg.sender].length; i++) {
-            if (invoices[msg.sender][i].dueDate < block.timestamp) {
+            if (invoices[msg.sender][i].dueDate != 0 && invoices[msg.sender][i].dueDate < block.timestamp) {
                 counter_++;
             }
         }
@@ -175,13 +186,12 @@ contract SimpleFactoring {
      * @return unsettledInvoices_ User's unsettled invoices
      */
     function getUnsettledInvoices() public view returns (PayableInvoice[] memory) {
-        require(false, "TODO debug");
-        uint256 count = userCount * invoiceCount;
-        require(count > 0, "Empty data");
-        PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](count);
+        uint256 arraySize = userCount * invoiceCount;
+        require(arraySize > 0, "Empty data");
+        PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](arraySize);
         uint256 counter;
         for (uint256 i = 0; i < userCount; i++) {
-            for (uint256 j = 0; i < invoices[users[i]].length; j++) {
+            for (uint256 j = 0; j < invoices[users[i]].length; j++) {
                 if (invoices[users[i]][j].payer == msg.sender && !invoices[users[i]][j].settled) {
                     PayableInvoice memory payableInvoice;
                     payableInvoice.invoice = invoices[users[i]][j];
@@ -191,8 +201,12 @@ contract SimpleFactoring {
                 }
             }
         }
-        require(counter > 0, "Empty data");
-        return unsettledInvoices;
+        require(counter > 0, "No unsettled invoices");
+        PayableInvoice[] memory unsettledInvoicesFiltered = new PayableInvoice[](counter);
+        for (uint256 i = 0; i < counter; i++) {
+            unsettledInvoicesFiltered[i] = unsettledInvoices[i];
+        }
+        return unsettledInvoicesFiltered;
     }
 
     /**
@@ -213,6 +227,7 @@ contract SimpleFactoring {
      * @return All offers in an array
      */
     function getOffers() public view returns (Offer[] memory) {
+        require(offers.length > 0, "No offers");
         return offers;
     }
 
@@ -243,8 +258,7 @@ contract SimpleFactoring {
     {
         Offer memory offer = offers[index];
         require(msg.value >= offer.invoice.resellPrice, "Insufficient funds");
-        offer.seller.transfer(offer.invoice.resellPrice * (1/(100-commision)));
-        boss.transfer(offer.invoice.resellPrice * (1/(commision)));
+        offer.seller.transfer(getPriceWithCommision(offer.invoice.resellPrice));
         createInvoiceForSender(
             offer.invoice.dueDate,
             offer.invoice.payer,
