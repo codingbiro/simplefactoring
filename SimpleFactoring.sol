@@ -7,26 +7,35 @@ pragma solidity >=0.7.0 <0.9.0;
  * @dev Implements simple factoring
  */
 contract SimpleFactoring {
-    address private boss; // Owner of contract
-    uint8 public commision = 10; // 10% commision on invoice sales;
+    address payable private boss; // Owner of contract
+    uint8 public commision = 2; // 2% commision on invoice sales;
 
     struct Invoice {
+        uint256 index; // Index of Invoice = position in array
         uint256 dueDate; // Deadline of payment
         address payer; // Customer
         bool settled; // If true, the invoice has been paid
         uint256 total; // Amount to be paid in Ether
-        uint256 resellValue; // Invoice price in case of a sale
-        uint8 resellCount; // Number of resells
+        uint256 resellPrice; // Invoice price in case of a sale
     }
 
     mapping(address => Invoice[]) private invoices;
+    uint256 private userCount;
+    uint256 private invoiceCount;
+    mapping (uint256 => address) private users;
 
     struct Offer {
+        uint256 index; // Index of Offer = position in array
         Invoice invoice; // Invoice to be sold
-        address payable payee; // Seller
+        address payable seller; // Seller
     }
 
     Offer[] private offers;
+
+    struct PayableInvoice {        
+        Invoice invoice; // Invoice to be sold
+        address payable beneficiary; // Beneficiary of the invoice
+    }
 
     // Modifier to check if caller is owner
     modifier bossGuard {
@@ -36,7 +45,7 @@ contract SimpleFactoring {
 
     // Modifier to check if invoice is not overdue
     // Works with offer=true for Offers and offer=false for Invoices
-    modifier notOverdueGuard(uint8 index, bool offer) {
+    modifier notOverdueGuard(address sender, uint256 index, bool offer) {
         offer
             ? require(
                 offers[index].invoice.dueDate != 0 &&
@@ -44,18 +53,65 @@ contract SimpleFactoring {
                 "Offer does not exist or is overdue"
             )
             : require(
-                invoices[msg.sender][index].dueDate != 0 &&
-                    invoices[msg.sender][index].dueDate > block.timestamp,
+                invoices[sender][index].dueDate != 0 &&
+                    invoices[sender][index].dueDate > block.timestamp,
                 "Invoice does not exist or is overdue"
             );
         _;
     }
 
+    // Modifier to check if invoice is settled
+    // Works with offer=true for Offers and offer=false for Invoices
+    modifier notSettledGuard(address sender, uint256 index, bool offer) {
+        offer
+            ? require(
+                offers[index].invoice.dueDate != 0 &&
+                    offers[index].invoice.dueDate > block.timestamp,
+                "Offer does not exist or is settled"
+            )
+            : require(
+                invoices[sender][index].dueDate != 0 &&
+                    invoices[sender][index].dueDate > block.timestamp,
+                "Invoice does not exist or is settled"
+            );
+        _;
+    }
+    
+    // Helper methods
+
     /**
      * @dev Set contract deployer as boss
      */
     constructor() {
-        boss = msg.sender;
+        boss = payable(msg.sender);
+    }
+    
+     /**
+     * @dev Function to create an invoice object for sender
+     * @param dueDate Timestamp of payment deadline
+     * @param payer Address of customer
+     * @param total Amount of money to be paid for the invoice in Ether
+     * @param resellPrice Selling price of invoice
+     */
+    function createInvoiceForSender(
+        uint256 dueDate,
+        address payer,
+        uint256 total,
+        uint256 resellPrice
+    ) private {
+        Invoice memory invoice;
+        invoice.index = invoices[msg.sender].length;
+        invoice.dueDate = dueDate;
+        invoice.payer = payer;
+        invoice.settled = false;
+        invoice.total = total;
+        invoice.resellPrice = resellPrice;
+        if (invoices[msg.sender].length == 0) {
+            users[userCount] = msg.sender;
+            userCount++;
+        }
+        invoiceCount++;
+        invoices[msg.sender].push(invoice);        
     }
 
     // Boss methods
@@ -70,13 +126,13 @@ contract SimpleFactoring {
     }
 
     /**
-     * @dev Take out leftover Ether from contract
+     * @dev Take out profit from contract
      */
     function getProfit() public bossGuard {
         payable(boss).transfer(address(this).balance);
     }
 
-    // Payee methods
+    // Invoice methods
 
     /**
      * @dev Retrieves sender's invoices
@@ -84,27 +140,6 @@ contract SimpleFactoring {
      */
     function getInvoices() public view returns (Invoice[] memory) {
         return invoices[msg.sender];
-    }
-
-    /**
-     * @dev Helper function to create an invoice object
-     * @param dueDate Timestamp of payment deadline
-     * @param payer Address of customer
-     * @param total Amount of money to be paid for the invoice in Ether
-     * @param resellCount Number of resells
-     * @return invoice_ The invoice object
-     */
-    function createInvoiceObject(
-        uint256 dueDate,
-        address payer,
-        uint256 total,
-        uint8 resellCount
-    ) private view returns (Invoice memory invoice_) {
-        invoice_.dueDate = dueDate;
-        invoice_.payer = payer;
-        invoice_.settled = false;
-        invoice_.total = total;
-        invoice_.resellValue = total * (1 / (commision + resellCount));
     }
 
     /**
@@ -118,8 +153,7 @@ contract SimpleFactoring {
         address payer,
         uint256 total
     ) public {
-        Invoice memory invoice = createInvoiceObject(dueDate, payer, total, 0);
-        invoices[msg.sender].push(invoice);
+        createInvoiceForSender(dueDate, payer, total, total);
     }
 
     /**
@@ -138,9 +172,38 @@ contract SimpleFactoring {
 
     /**
      * @dev Get all unsettled invoices
+     * @return unsettledInvoices_ User's unsettled invoices
      */
-    function getUnsettledInvoices() public {
-        // TODO
+    function getUnsettledInvoices() public view returns (PayableInvoice[] memory) {
+        require(false, "TODO debug");
+        uint256 count = userCount * invoiceCount;
+        require(count > 0, "Empty data");
+        PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](count);
+        uint256 counter;
+        for (uint256 i = 0; i < userCount; i++) {
+            for (uint256 j = 0; i < invoices[users[i]].length; j++) {
+                if (invoices[users[i]][j].payer == msg.sender && !invoices[users[i]][j].settled) {
+                    PayableInvoice memory payableInvoice;
+                    payableInvoice.invoice = invoices[users[i]][j];
+                    payableInvoice.beneficiary = payable(users[i]);
+                    unsettledInvoices[counter] = payableInvoice;
+                    counter++;
+                }
+            }
+        }
+        require(counter > 0, "Empty data");
+        return unsettledInvoices;
+    }
+
+    /**
+     * @dev Pay for an unsettled invoice
+     * @param index Index of invoice
+     * @param beneficiary Beneficiary of invoice
+     */
+    function payInvoice(uint256 index, address payable beneficiary) public payable notSettledGuard(beneficiary, index, false) {
+        require(msg.value >= invoices[beneficiary][index].total, "Insufficient funds");
+        invoices[beneficiary][index].settled = true;
+        beneficiary.transfer(invoices[beneficiary][index].total);
     }
 
     // Market methods
@@ -156,35 +219,38 @@ contract SimpleFactoring {
     /**
      * @dev Sell an invoice
      * @param index Position of invoice within seller's invoices
+     * @param price Selling price of invoice
      */
-    function sellInvoice(uint8 index) public notOverdueGuard(index, false) {
+    function sellInvoice(uint256 index, uint256 price) public notOverdueGuard(msg.sender, index, false) notSettledGuard(msg.sender, index, false) {
+        invoices[msg.sender][index].resellPrice = price;
         Offer memory offer;
+        offer.index = invoices[msg.sender].length;
         offer.invoice = invoices[msg.sender][index];
-        offer.payee = payable(msg.sender);
+        offer.seller = payable(msg.sender);
         offers.push(offer);
         delete invoices[msg.sender][index];
     }
 
     /**
      * @dev Sell an invoice
-     * @param index Position of invoice within seller's invoices
+     * @param index Index of Offer
      */
-    function buyInvoice(uint8 index)
+    function buyInvoice(uint256 index)
         public
         payable
-        notOverdueGuard(index, true)
+        notOverdueGuard(msg.sender, index, true)
+        notSettledGuard(msg.sender, index, true)
     {
         Offer memory offer = offers[index];
-        require(msg.value >= offer.invoice.resellValue, "Insufficient funds");
-        offer.payee.transfer(offer.invoice.resellValue);
-        Invoice memory invoice =
-            createInvoiceObject(
-                offer.invoice.dueDate,
-                offer.invoice.payer,
-                offer.invoice.total,
-                offer.invoice.resellCount + 1
-            );
-        invoices[msg.sender].push(invoice);
+        require(msg.value >= offer.invoice.resellPrice, "Insufficient funds");
+        offer.seller.transfer(offer.invoice.resellPrice * (1/(100-commision)));
+        boss.transfer(offer.invoice.resellPrice * (1/(commision)));
+        createInvoiceForSender(
+            offer.invoice.dueDate,
+            offer.invoice.payer,
+            offer.invoice.total,
+            offer.invoice.total
+        );
         delete offers[index];
     }
 }
