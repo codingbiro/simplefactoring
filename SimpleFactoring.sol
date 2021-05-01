@@ -76,6 +76,16 @@ contract SimpleFactoring {
             );
         _;
     }
+    
+    // Modifier to check if invoice is for sale
+    modifier notForSaleGuard(address sender, uint256 index) {
+        for(uint256 i = 0; i < offers.length; i++) {
+            if(offers[i].seller == sender) {
+                require(offers[i].invoice.index != index, "Invoice is for sale");
+            }
+        }
+        _;
+    }
 
     /**
      * @dev Set contract deployer as boss
@@ -86,6 +96,19 @@ contract SimpleFactoring {
     
     // Helper methods
     // *** ALWAYS PRIVATE FUNCTIONS ***
+    
+     /**
+     * @dev Function to check if an Invoice array is empty
+     * @param array Invoice[]
+     */
+    function isInvoiceArrayEmpty(Invoice[] memory array) private pure returns (bool isEmpty_) {
+        isEmpty_ = true;
+        for(uint256 i = 0; i < array.length; i++) {
+            if(array[i].dueDate != 0) {
+                isEmpty_ = false;
+            }
+        }
+    }
     
      /**
      * @dev Function to create an invoice object for sender
@@ -113,6 +136,18 @@ contract SimpleFactoring {
         }
         invoiceCount++;
         invoices[msg.sender].push(invoice);        
+    }
+    
+    /**
+     * @dev Function to delete an invoice object for sender
+     * @param index Address of customer
+     */
+    function deleteInvoiceForSender(uint256 index) private notSettledGuard(msg.sender, index, false) notForSaleGuard(msg.sender, index) {
+        delete invoices[msg.sender][index];
+        if (isInvoiceArrayEmpty(invoices[msg.sender])) {
+            userCount--;
+        }
+        invoiceCount--;
     }
     
     /**
@@ -177,6 +212,14 @@ contract SimpleFactoring {
                 counter_++;
             }
         }
+    }
+    
+    /**
+     * @dev Delete an invoice
+     * @param index Index of invoice
+     */
+    function deleteInvoice(uint256 index) public {
+        deleteInvoiceForSender(index);
     }
 
     // Payer methods
