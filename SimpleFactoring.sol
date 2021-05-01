@@ -60,6 +60,18 @@ contract SimpleFactoring {
         _;
     }
 
+    // Modifier to check if an array of invoices exist and are not overdue
+    modifier notOverdueArrayGuard(address sender, uint256[] memory indices) {
+        for(uint256 i = 0; i < indices.length; i++) {
+            require(
+                invoices[sender][indices[i]].dueDate != 0 &&
+                    invoices[sender][indices[i]].dueDate > block.timestamp,
+                "Invoice does not exist or is overdue"
+            );
+        }
+        _;
+    }
+
     // Modifier to check if invoice is settled
     // Works with offer=true for Offers and offer=false for Invoices
     modifier notSettledGuard(address sender, uint256 index, bool offer) {
@@ -84,6 +96,27 @@ contract SimpleFactoring {
                 require(offers[i].invoice.index != index, "Invoice is for sale");
             }
         }
+        _;
+    }
+
+    // Modifier to check if an array of invoices are for sale
+    modifier notForSaleArrayGuard(address sender, uint256[] memory indices) {
+        for(uint256 i = 0; i < offers.length; i++) {
+            for(uint256 j = 0; j < indices.length; j++) {
+                if(offers[i].seller == sender) {
+                    require(offers[i].invoice.index != indices[j], "Invoice is for sale");
+                }
+            }
+        }
+        _;
+    }
+
+    // Modifier to check if sender is the owner of an offer
+    modifier doesOwnOffer(address sender, uint256 index) {
+        require(
+            offers[index].seller == sender,
+            "Offer does not exist or sender is not the owner of it"
+        );
         _;
     }
 
@@ -213,6 +246,14 @@ contract SimpleFactoring {
             }
         }
     }
+
+    /**
+     * @dev Split invoices
+     * @param indices Array of invoices to be split
+     */
+    function splitInvoices(uint256[] memory indices) public view notOverdueArrayGuard(msg.sender, indices) notForSaleArrayGuard(msg.sender, indices) {
+        require(false, "TODO");
+    }
     
     /**
      * @dev Delete an invoice
@@ -286,6 +327,14 @@ contract SimpleFactoring {
         offer.invoice = invoices[msg.sender][index];
         offer.seller = payable(msg.sender);
         offers.push(offer);
+    }
+
+    /**
+     * @dev Delete an invoice offer
+     * @param index Position of invoice within seller's invoices
+     */
+    function deleteInvoiceOffer(uint256 index) public doesOwnOffer(msg.sender, index) {
+        delete offers[index];
     }
 
     /**
