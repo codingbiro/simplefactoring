@@ -243,7 +243,6 @@ contract SimpleFactoring {
         offer.invoice = invoices[msg.sender][index];
         offer.seller = payable(msg.sender);
         offers.push(offer);
-        delete invoices[msg.sender][index];
     }
 
     /**
@@ -259,12 +258,13 @@ contract SimpleFactoring {
         Offer memory offer = offers[index];
         require(msg.value >= offer.invoice.resellPrice, "Insufficient funds");
         offer.seller.transfer(getPriceWithCommision(offer.invoice.resellPrice));
+        delete invoices[msg.sender][offer.invoice.index];
+        delete offers[index];
         createInvoiceForSender(
             offer.invoice.dueDate,
             offer.invoice.payer,
             offer.invoice.total,
             offer.invoice.total
         );
-        delete offers[index];
     }
 }
