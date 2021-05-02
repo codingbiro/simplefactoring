@@ -23,6 +23,13 @@ contract SimpleFactoring {
     uint256 private userCount;
     uint256 private invoiceCount;
     mapping (uint256 => address) private users;
+    mapping(address => DueDateExtensionRequest[]) private dueDateExtensionRequests;
+
+    struct DueDateExtensionRequest{
+        Invoice invoice; // invoice connected to the extension request
+        uint256 newDueDate; // the requested new due date of the invoice
+        uint256 fee; // the fee in return of the due date extension
+    }
 
     struct Offer {
         uint256 index; // Index of Offer = position in array
@@ -267,4 +274,48 @@ contract SimpleFactoring {
             offer.invoice.total
         );
     }
+
+
+    /**
+     * @dev Request due date extension of the given invoice
+     * @param index Index of invoice in the invoices arrays
+     * @param beneficiary Beneficiary of invoice
+     */
+    function createDueDateExtensionRequest(uint256 index,
+     address beneficiary,
+      uint256 newDueDate,
+       uint256 feeInReturn) public notOverdueGuard(beneficiary, index, false){
+        DueDateExtensionRequest memory request;
+        request.invoice = invoices[beneficiary][index];
+        request.newDueDate = newDueDate;
+        request.fee = feeInReturn;
+        dueDateExtensionRequests[beneficiary].push(request);
+    }
+
+    /**
+     * @dev Returns due date extension request connected to the owned invoices of the user
+     */
+    function getMyDueDateExtensionRequests() public view returns (DueDateExtensionRequest[] memory) {
+        return dueDateExtensionRequests[msg.sender];
+    }
+
+    /**
+     * @dev Answers a request for due date extension
+     * @param index Index of request in the dueDateExtensionRequests arrays
+     * @param accept the answer for the request (true = accept, false = reject)
+     */
+    function answerDueDateExtensionRequest(
+        uint256 index,
+        bool accept) public notOverdueGuard(msg.sender, dueDateExtensionRequests[msg.sender][index].invoice.index, false){
+        if(accept){
+            invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].dueDate = dueDateExtensionRequests[msg.sender][index].newDueDate;
+            invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].total = 
+                invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].total + dueDateExtensionRequests[msg.sender][index].fee;
+            invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].resellPrice = 
+                invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].resellPrice + dueDateExtensionRequests[msg.sender][index].fee;
+        }
+        delete dueDateExtensionRequests[msg.sender][index];
+    }
+
+    
 }
