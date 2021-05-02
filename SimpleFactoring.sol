@@ -66,7 +66,7 @@ contract SimpleFactoring {
             require(
                 invoices[sender][indices[i]].dueDate != 0 &&
                     invoices[sender][indices[i]].dueDate > block.timestamp,
-                "Invoice does not exist or is overdue"
+                "At least one of the invoices does not exist or is overdue"
             );
         }
         _;
@@ -88,6 +88,18 @@ contract SimpleFactoring {
             );
         _;
     }
+
+    // Modifier to check if an array of invoices are settled
+    modifier notSettledArrayGuard(address sender, uint256[] memory indices) {
+        for(uint256 i = 0; i < indices.length; i++) {
+            require(
+                invoices[sender][indices[i]].dueDate != 0 &&
+                    !invoices[sender][indices[i]].settled,
+                "At least one of the invoices does not exist or is settled"
+            );
+        }
+        _;
+    }
     
     // Modifier to check if invoice is for sale
     modifier notForSaleGuard(address sender, uint256 index) {
@@ -104,7 +116,7 @@ contract SimpleFactoring {
         for(uint256 i = 0; i < offers.length; i++) {
             for(uint256 j = 0; j < indices.length; j++) {
                 if(offers[i].seller == sender) {
-                    require(offers[i].invoice.index != indices[j], "Invoice is for sale");
+                    require(offers[i].invoice.index != indices[j], "At least one of the invoices is for sale");
                 }
             }
         }
@@ -175,7 +187,11 @@ contract SimpleFactoring {
      * @dev Function to delete an invoice object for sender
      * @param index Address of customer
      */
-    function deleteInvoiceForSender(uint256 index) private notSettledGuard(msg.sender, index, false) notForSaleGuard(msg.sender, index) {
+    function deleteInvoiceForSender(uint256 index)
+        private
+        notSettledGuard(msg.sender, index, false)
+        notForSaleGuard(msg.sender, index)
+    {
         delete invoices[msg.sender][index];
         if (isInvoiceArrayEmpty(invoices[msg.sender])) {
             userCount--;
@@ -248,11 +264,53 @@ contract SimpleFactoring {
     }
 
     /**
-     * @dev Split invoices
-     * @param indices Array of invoices to be split
+     * @dev Split invoice for sender
+     * @param index Index of invoice to be split
+     * @param segments Number of invoices to be created from one
      */
-    function splitInvoices(uint256[] memory indices) public view notOverdueArrayGuard(msg.sender, indices) notForSaleArrayGuard(msg.sender, indices) {
-        require(false, "TODO");
+    function splitInvoice(uint256 index, uint256 segments)
+        public
+        notOverdueGuard(msg.sender, index, false)
+        notForSaleGuard(msg.sender, index)
+        notSettledGuard(msg.sender, index, false)
+    {
+        require(segments > 1, "Cannot split invoice into less than 2 segments");
+        Invoice memory invoice = invoices[msg.sender][index];
+        uint256 total = invoice.total / segments;
+        for (uint256 i = 0; i < segments; i++) {
+            createInvoiceForSender(
+                invoice.dueDate,
+                invoice.payer,
+                total,
+                total
+            );
+        }
+        deleteInvoiceForSender(index);
+    }
+
+    /**
+     * @dev Merge invoices
+     * @param indices Array of invoices to be merged
+     */
+    function mergeInvoices(uint256[] memory indices)
+        public
+        notOverdueArrayGuard(msg.sender, indices)
+        notForSaleArrayGuard(msg.sender, indices)
+        notSettledArrayGuard(msg.sender, indices)
+    {
+        require(indices.length > 0, "Empty input");
+        uint256 dueDate = invoices[msg.sender][indices[0]].dueDate;
+        address payer = invoices[msg.sender][indices[0]].payer;
+        for (uint256 i = 1; i < indices.length; i++) {
+            require(invoices[msg.sender][indices[i]].dueDate == dueDate, "Invoices' due dates are not identical");
+            require(invoices[msg.sender][indices[i]].payer == payer, "Invoices' payers are not identical");
+        }
+        uint256 total;
+        for (uint256 i = 0; i < indices.length; i++) {
+            total += invoices[msg.sender][indices[i]].total;
+            deleteInvoiceForSender(indices[i]);
+        }
+        createInvoiceForSender(dueDate, payer, total, total);
     }
     
     /**
@@ -271,7 +329,7 @@ contract SimpleFactoring {
      */
     function getUnsettledInvoices() public view returns (PayableInvoice[] memory) {
         uint256 arraySize = userCount * invoiceCount;
-        require(arraySize > 0, "Empty data");
+        require(arraySize > 0, "No unsettled invoices");
         PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](arraySize);
         uint256 counter;
         for (uint256 i = 0; i < userCount; i++) {
@@ -298,7 +356,11 @@ contract SimpleFactoring {
      * @param index Index of invoice
      * @param beneficiary Beneficiary of invoice
      */
-    function payInvoice(uint256 index, address payable beneficiary) public payable notSettledGuard(beneficiary, index, false) {
+    function payInvoice(uint256 index, address payable beneficiary)
+        public
+        payable
+        notSettledGuard(beneficiary, index, false)
+    {
         require(msg.value >= invoices[beneficiary][index].total, "Insufficient funds");
         invoices[beneficiary][index].settled = true;
         beneficiary.transfer(invoices[beneficiary][index].total);
@@ -320,7 +382,11 @@ contract SimpleFactoring {
      * @param index Position of invoice within seller's invoices
      * @param price Selling price of invoice
      */
-    function sellInvoice(uint256 index, uint256 price) public notOverdueGuard(msg.sender, index, false) notSettledGuard(msg.sender, index, false) {
+    function sellInvoice(uint256 index, uint256 price)
+        public
+        notOverdueGuard(msg.sender, index, false)
+        notSettledGuard(msg.sender, index, false)
+    {
         invoices[msg.sender][index].resellPrice = price;
         Offer memory offer;
         offer.index = invoices[msg.sender].length;
@@ -350,7 +416,7 @@ contract SimpleFactoring {
         Offer memory offer = offers[index];
         require(msg.value >= offer.invoice.resellPrice, "Insufficient funds");
         offer.seller.transfer(getPriceWithCommision(offer.invoice.resellPrice));
-        delete invoices[msg.sender][offer.invoice.index];
+        deleteInvoiceForSender(offer.invoice.index);
         delete offers[index];
         createInvoiceForSender(
             offer.invoice.dueDate,
