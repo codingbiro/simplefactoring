@@ -20,8 +20,8 @@ contract SimpleFactoring {
     }
 
     mapping(address => Invoice[]) private invoices;
-    uint256 private userCount;
-    uint256 private invoiceCount;
+    uint256 public userCount = 1;
+    uint256 public invoiceCount;
     mapping (uint256 => address) private users;
 
     struct Offer {
@@ -175,11 +175,11 @@ contract SimpleFactoring {
         invoice.settled = false;
         invoice.total = total;
         invoice.resellPrice = resellPrice;
-        if (invoices[msg.sender].length == 0) {
+        if (isInvoiceArrayEmpty(invoices[msg.sender])) {
             users[userCount] = msg.sender;
-            userCount++;
+            userCount = userCount + 1;
         }
-        invoiceCount++;
+        invoiceCount = invoiceCount + 1;
         invoices[msg.sender].push(invoice);        
     }
     
@@ -188,15 +188,17 @@ contract SimpleFactoring {
      * @param index Address of customer
      */
     function deleteInvoiceForSender(uint256 index)
-        private
+        private        
         notSettledGuard(msg.sender, index, false)
         notForSaleGuard(msg.sender, index)
-    {
+    {        
         delete invoices[msg.sender][index];
         if (isInvoiceArrayEmpty(invoices[msg.sender])) {
-            userCount--;
+            require(userCount >= 1);
+            userCount = userCount - 1;
         }
-        invoiceCount--;
+        require(invoiceCount >= 1);
+        invoiceCount = invoiceCount - 1;
     }
     
     /**
@@ -329,26 +331,32 @@ contract SimpleFactoring {
      */
     function getUnsettledInvoices() public view returns (PayableInvoice[] memory) {
         uint256 arraySize = userCount * invoiceCount;
-        require(arraySize > 0, "No unsettled invoices");
-        PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](arraySize);
-        uint256 counter;
-        for (uint256 i = 0; i < userCount; i++) {
-            for (uint256 j = 0; j < invoices[users[i]].length; j++) {
-                if (invoices[users[i]][j].payer == msg.sender && !invoices[users[i]][j].settled) {
-                    PayableInvoice memory payableInvoice;
-                    payableInvoice.invoice = invoices[users[i]][j];
-                    payableInvoice.beneficiary = payable(users[i]);
-                    unsettledInvoices[counter] = payableInvoice;
-                    counter++;
+        if (arraySize > 0) {
+            PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](arraySize);
+            uint256 counter;
+            for (uint256 i = 0; i < userCount; i++) {
+                for (uint256 j = 0; j < invoices[users[i]].length; j++) {
+                    if (invoices[users[i]][j].payer == msg.sender && !invoices[users[i]][j].settled) {
+                        PayableInvoice memory payableInvoice;
+                        payableInvoice.invoice = invoices[users[i]][j];
+                        payableInvoice.beneficiary = payable(users[i]);
+                        unsettledInvoices[counter] = payableInvoice;
+                        counter++;
+                    }
                 }
             }
+            if (counter > 0) {
+                PayableInvoice[] memory unsettledInvoicesFiltered = new PayableInvoice[](counter);
+                for (uint256 i = 0; i < counter; i++) {
+                    unsettledInvoicesFiltered[i] = unsettledInvoices[i];
+                }
+                return unsettledInvoicesFiltered;
+            } else {
+                return new PayableInvoice[](0);
+            }
+        } else {
+            return new PayableInvoice[](0);
         }
-        require(counter > 0, "No unsettled invoices");
-        PayableInvoice[] memory unsettledInvoicesFiltered = new PayableInvoice[](counter);
-        for (uint256 i = 0; i < counter; i++) {
-            unsettledInvoicesFiltered[i] = unsettledInvoices[i];
-        }
-        return unsettledInvoicesFiltered;
     }
 
     /**
