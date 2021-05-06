@@ -26,6 +26,7 @@ contract SimpleFactoring {
     mapping(address => DueDateExtensionRequest[]) private dueDateExtensionRequests;
 
     struct DueDateExtensionRequest{
+        uint256 index; // index of the request = position in the due date extension array
         Invoice invoice; // invoice connected to the extension request
         uint256 newDueDate; // the requested new due date of the invoice
         uint256 fee; // the fee in return of the due date extension
@@ -81,6 +82,14 @@ contract SimpleFactoring {
                     invoices[sender][index].dueDate > block.timestamp,
                 "Invoice does not exist or is settled"
             );
+        _;
+    }
+
+    modifier debtorGuard(address sender, address beneficiary, uint256 index) {
+        require(
+            dueDateExtensionRequests[beneficiary][index].invoice.payer == sender,
+            "Offer does not exist or the person who wants to create the request is not the debtor."
+        );
         _;
     }
 
@@ -284,11 +293,12 @@ contract SimpleFactoring {
     function createDueDateExtensionRequest(uint256 index,
      address beneficiary,
       uint256 newDueDate,
-       uint256 feeInReturn) public notOverdueGuard(beneficiary, index, false){
+       uint256 feeInReturn) public notOverdueGuard(beneficiary, index, false) debtorGuard(msg.sender, beneficiary, index){
         DueDateExtensionRequest memory request;
         request.invoice = invoices[beneficiary][index];
         request.newDueDate = newDueDate;
         request.fee = feeInReturn;
+        request.index = dueDateExtensionRequests[beneficiary].length;
         dueDateExtensionRequests[beneficiary].push(request);
     }
 
