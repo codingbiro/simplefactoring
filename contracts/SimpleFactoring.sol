@@ -20,8 +20,8 @@ contract SimpleFactoring {
     }
 
     mapping(address => Invoice[]) private invoices;
-    uint256 public userCount = 1;
-    uint256 public invoiceCount;
+    uint256 private userCount;
+    uint256 private invoiceCount;
     mapping (uint256 => address) private users;
 
     struct Offer {
@@ -188,10 +188,10 @@ contract SimpleFactoring {
      * @param index Address of customer
      */
     function deleteInvoiceForSender(uint256 index)
-        private        
+        private
         notSettledGuard(msg.sender, index, false)
         notForSaleGuard(msg.sender, index)
-    {        
+    {
         delete invoices[msg.sender][index];
         if (isInvoiceArrayEmpty(invoices[msg.sender])) {
             require(userCount >= 1);
