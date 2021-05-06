@@ -8,7 +8,7 @@ pragma solidity >=0.7.0 <0.9.0;
  */
 contract SimpleFactoring {
     address payable private boss; // Owner of contract
-    uint8 public commision = 2; // 2% commision on invoice sales;
+    uint8 public commission = 2; // 2% commission on invoice sales;
 
     struct Invoice {
         uint256 index; // Index of Invoice = position in array
@@ -200,23 +200,23 @@ contract SimpleFactoring {
     }
     
     /**
-     * @dev Function to calculate price with commision
-     * @param price Price before commision
-     * @return Price with commision
+     * @dev Function to calculate price with commission
+     * @param price Price before commission
+     * @return Price with commission
      */
-    function getPriceWithCommision(uint256 price) private view returns (uint256) {
-        return price - (price*commision)/100;
+    function getPriceWithCommission(uint256 price) private view returns (uint256) {
+        return price - (price*commission)/100;
     }
 
     // Boss methods
 
     /**
-     * @dev Change commision rate
-     * @param percentage New commision rate in percentage
+     * @dev Change commission rate
+     * @param percentage New commission rate in percentage
      */
-    function setCommision(uint8 percentage) public bossGuard {
+    function setCommission(uint8 percentage) public bossGuard {
         require(percentage >= 0 && percentage <= 100);
-        commision = percentage;
+        commission = percentage;
     }
 
     /**
@@ -233,7 +233,7 @@ contract SimpleFactoring {
      * @return User's invoices in an array
      */
     function getInvoices() public view returns (Invoice[] memory) {
-        require(invoices[msg.sender].length > 0, "No invoices");
+        // require(invoices[msg.sender].length > 0, "No invoices");
         return invoices[msg.sender];
     }
 
@@ -415,7 +415,7 @@ contract SimpleFactoring {
     {
         Offer memory offer = offers[index];
         require(msg.value >= offer.invoice.resellPrice, "Insufficient funds");
-        offer.seller.transfer(getPriceWithCommision(offer.invoice.resellPrice));
+        offer.seller.transfer(getPriceWithCommission(offer.invoice.resellPrice));
         deleteInvoiceForSender(offer.invoice.index);
         delete offers[index];
         createInvoiceForSender(
