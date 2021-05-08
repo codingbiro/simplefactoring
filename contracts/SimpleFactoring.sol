@@ -8,7 +8,7 @@ pragma solidity >=0.7.0 <0.9.0;
  */
 contract SimpleFactoring {
     address payable private boss; // Owner of contract
-    uint8 public commision = 2; // 2% commision on invoice sales;
+    uint8 public commission = 2; // 2% commission on invoice sales;
 
     struct Invoice {
         uint256 index; // Index of Invoice = position in array
@@ -86,12 +86,12 @@ contract SimpleFactoring {
         offer
             ? require(
                 offers[index].invoice.dueDate != 0 &&
-                    offers[index].invoice.dueDate > block.timestamp,
+                    !offers[index].invoice.settled,
                 "Offer does not exist or is settled"
             )
             : require(
                 invoices[sender][index].dueDate != 0 &&
-                    invoices[sender][index].dueDate > block.timestamp,
+                    !invoices[sender][index].settled,
                 "Invoice does not exist or is settled"
             );
         _;
@@ -191,11 +191,11 @@ contract SimpleFactoring {
         invoice.settled = false;
         invoice.total = total;
         invoice.resellPrice = resellPrice;
-        if (invoices[msg.sender].length == 0) {
+        if (isInvoiceArrayEmpty(invoices[msg.sender])) {
             users[userCount] = msg.sender;
-            userCount++;
+            userCount = userCount + 1;
         }
-        invoiceCount++;
+        invoiceCount = invoiceCount + 1;
         invoices[msg.sender].push(invoice);        
     }
     
@@ -203,36 +203,38 @@ contract SimpleFactoring {
      * @dev Function to delete an invoice object for sender
      * @param index Address of customer
      */
-    function deleteInvoiceForSender(uint256 index)
+    function deleteInvoiceForUser(uint256 index, address sender)
         private
-        notSettledGuard(msg.sender, index, false)
-        notForSaleGuard(msg.sender, index)
+        notSettledGuard(sender, index, false)
+        notForSaleGuard(sender, index)
     {
-        delete invoices[msg.sender][index];
-        if (isInvoiceArrayEmpty(invoices[msg.sender])) {
-            userCount--;
+        delete invoices[sender][index];
+        if (isInvoiceArrayEmpty(invoices[sender])) {
+            require(userCount >= 1);
+            userCount = userCount - 1;
         }
-        invoiceCount--;
+        require(invoiceCount >= 1);
+        invoiceCount = invoiceCount - 1;
     }
     
     /**
-     * @dev Function to calculate price with commision
-     * @param price Price before commision
-     * @return Price with commision
+     * @dev Function to calculate price with commission
+     * @param price Price before commission
+     * @return Price with commission
      */
-    function getPriceWithCommision(uint256 price) private view returns (uint256) {
-        return price - (price*commision)/100;
+    function getPriceWithCommission(uint256 price) private view returns (uint256) {
+        return price - (price*commission)/100;
     }
 
     // Boss methods
 
     /**
-     * @dev Change commision rate
-     * @param percentage New commision rate in percentage
+     * @dev Change commission rate
+     * @param percentage New commission rate in percentage
      */
-    function setCommision(uint8 percentage) public bossGuard {
+    function setCommission(uint8 percentage) public bossGuard {
         require(percentage >= 0 && percentage <= 100);
-        commision = percentage;
+        commission = percentage;
     }
 
     /**
@@ -249,7 +251,7 @@ contract SimpleFactoring {
      * @return User's invoices in an array
      */
     function getInvoices() public view returns (Invoice[] memory) {
-        require(invoices[msg.sender].length > 0, "No invoices");
+        // require(invoices[msg.sender].length > 0, "No invoices");
         return invoices[msg.sender];
     }
 
@@ -301,7 +303,7 @@ contract SimpleFactoring {
                 total
             );
         }
-        deleteInvoiceForSender(index);
+        deleteInvoiceForUser(index, msg.sender);
     }
 
     /**
@@ -324,7 +326,7 @@ contract SimpleFactoring {
         uint256 total;
         for (uint256 i = 0; i < indices.length; i++) {
             total += invoices[msg.sender][indices[i]].total;
-            deleteInvoiceForSender(indices[i]);
+            deleteInvoiceForUser(indices[i], msg.sender);
         }
         createInvoiceForSender(dueDate, payer, total, total);
     }
@@ -334,7 +336,7 @@ contract SimpleFactoring {
      * @param index Index of invoice
      */
     function deleteInvoice(uint256 index) public {
-        deleteInvoiceForSender(index);
+        deleteInvoiceForUser(index, msg.sender);
     }
 
     // Payer methods
@@ -345,26 +347,32 @@ contract SimpleFactoring {
      */
     function getUnsettledInvoices() public view returns (PayableInvoice[] memory) {
         uint256 arraySize = userCount * invoiceCount;
-        require(arraySize > 0, "No unsettled invoices");
-        PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](arraySize);
-        uint256 counter;
-        for (uint256 i = 0; i < userCount; i++) {
-            for (uint256 j = 0; j < invoices[users[i]].length; j++) {
-                if (invoices[users[i]][j].payer == msg.sender && !invoices[users[i]][j].settled) {
-                    PayableInvoice memory payableInvoice;
-                    payableInvoice.invoice = invoices[users[i]][j];
-                    payableInvoice.beneficiary = payable(users[i]);
-                    unsettledInvoices[counter] = payableInvoice;
-                    counter++;
+        if (arraySize > 0) {
+            PayableInvoice[] memory unsettledInvoices = new PayableInvoice[](arraySize);
+            uint256 counter;
+            for (uint256 i = 0; i < userCount; i++) {
+                for (uint256 j = 0; j < invoices[users[i]].length; j++) {
+                    if (invoices[users[i]][j].payer == msg.sender && !invoices[users[i]][j].settled) {
+                        PayableInvoice memory payableInvoice;
+                        payableInvoice.invoice = invoices[users[i]][j];
+                        payableInvoice.beneficiary = payable(users[i]);
+                        unsettledInvoices[counter] = payableInvoice;
+                        counter++;
+                    }
                 }
             }
+            if (counter > 0) {
+                PayableInvoice[] memory unsettledInvoicesFiltered = new PayableInvoice[](counter);
+                for (uint256 i = 0; i < counter; i++) {
+                    unsettledInvoicesFiltered[i] = unsettledInvoices[i];
+                }
+                return unsettledInvoicesFiltered;
+            } else {
+                return new PayableInvoice[](0);
+            }
+        } else {
+            return new PayableInvoice[](0);
         }
-        require(counter > 0, "No unsettled invoices");
-        PayableInvoice[] memory unsettledInvoicesFiltered = new PayableInvoice[](counter);
-        for (uint256 i = 0; i < counter; i++) {
-            unsettledInvoicesFiltered[i] = unsettledInvoices[i];
-        }
-        return unsettledInvoicesFiltered;
     }
 
     /**
@@ -405,7 +413,7 @@ contract SimpleFactoring {
     {
         invoices[msg.sender][index].resellPrice = price;
         Offer memory offer;
-        offer.index = invoices[msg.sender].length;
+        offer.index = offers.length;
         offer.invoice = invoices[msg.sender][index];
         offer.seller = payable(msg.sender);
         offers.push(offer);
@@ -429,11 +437,12 @@ contract SimpleFactoring {
         notOverdueGuard(msg.sender, index, true)
         notSettledGuard(msg.sender, index, true)
     {
+        require(index < offers.length, "Invalid index");
         Offer memory offer = offers[index];
         require(msg.value >= offer.invoice.resellPrice, "Insufficient funds");
-        offer.seller.transfer(getPriceWithCommision(offer.invoice.resellPrice));
-        deleteInvoiceForSender(offer.invoice.index);
+        offer.seller.transfer(getPriceWithCommission(offer.invoice.resellPrice));
         delete offers[index];
+        deleteInvoiceForUser(offer.invoice.index, offer.seller);
         createInvoiceForSender(
             offer.invoice.dueDate,
             offer.invoice.payer,
