@@ -55,12 +55,12 @@ contract('SimpleFactoring', (accounts) => {
         assert(Array.isArray(invoices), 'Error with Invoices');
         assert.equal(1, getArrayLength(invoices, 'dueDate', undefined), 'Error with Invoices');
       })
-      // .then(() => {
-      //   return sfInstance.getOverDueCount({ from: accounts[0] });
-      // })
-      // .then((overdueInvoiceCount) => {
-      //   assert.equal(0, overdueInvoiceCount, 'Error with counting overdue Invoices');
-      // })
+      .then(() => {
+        return sfInstance.getOverDueCount({ from: accounts[0] });
+      })
+      .then((overdueInvoiceCount) => {
+        assert.equal(0, overdueInvoiceCount, 'Error with counting overdue Invoices');
+      })
       .then(() => {
         return sfInstance.getInvoices({ from: accounts[0] });
       })

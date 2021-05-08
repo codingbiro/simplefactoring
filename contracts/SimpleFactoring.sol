@@ -271,6 +271,18 @@ contract SimpleFactoring {
     }
 
     /**
+     * @dev Retrieves sender's overdue invoices length
+     * @return counter_ User's overdue invoices counter
+     */
+    function getOverDueCount() public view returns (uint256 counter_) {
+        for (uint256 i = 0; i < invoices[msg.sender].length; i++) {
+            if (invoices[msg.sender][i].dueDate != 0 && invoices[msg.sender][i].dueDate < block.timestamp) {
+                counter_++;
+            }
+        }
+    }
+
+    /**
      * @dev Split invoice for sender
      * @param index Index of invoice to be split
      * @param segments Number of invoices to be created from one
