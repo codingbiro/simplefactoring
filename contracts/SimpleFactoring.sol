@@ -136,14 +136,15 @@ contract SimpleFactoring {
         require(
             offers[index].seller == sender,
             "Offer does not exist or sender is not the owner of it"
+        );
+        _;
+    }
 
-
-
+    // Modifier to check if sender is the payer of an invoice
     modifier debtorGuard(address sender, address beneficiary, uint256 index) {
         require(
             dueDateExtensionRequests[beneficiary][index].invoice.payer == sender,
             "Offer does not exist or the person who wants to create the request is not the debtor."
-
         );
         _;
     }
@@ -267,18 +268,6 @@ contract SimpleFactoring {
         uint256 total
     ) public {
         createInvoiceForSender(dueDate, payer, total, total);
-    }
-
-    /**
-     * @dev Retrieves sender's overdue invoices length
-     * @return counter_ User's overdue invoices counter
-     */
-    function getOverDueCount() public view returns (uint256 counter_) {
-        for (uint256 i = 0; i < invoices[msg.sender].length; i++) {
-            if (invoices[msg.sender][i].dueDate != 0 && invoices[msg.sender][i].dueDate < block.timestamp) {
-                counter_++;
-            }
-        }
     }
 
     /**
@@ -457,10 +446,12 @@ contract SimpleFactoring {
      * @param index Index of invoice in the invoices arrays
      * @param beneficiary Beneficiary of invoice
      */
-    function createDueDateExtensionRequest(uint256 index,
-     address beneficiary,
-      uint256 newDueDate,
-       uint256 feeInReturn) public notOverdueGuard(beneficiary, index, false) debtorGuard(msg.sender, beneficiary, index){
+    function createDueDateExtensionRequest(
+        uint256 index,
+        address beneficiary,
+        uint256 newDueDate,
+        uint256 feeInReturn
+    ) public notOverdueGuard(beneficiary, index, false) debtorGuard(msg.sender, beneficiary, index) {
         DueDateExtensionRequest memory request;
         request.invoice = invoices[beneficiary][index];
         request.newDueDate = newDueDate;
@@ -481,18 +472,18 @@ contract SimpleFactoring {
      * @param index Index of request in the dueDateExtensionRequests arrays
      * @param accept the answer for the request (true = accept, false = reject)
      */
-    function answerDueDateExtensionRequest(
-        uint256 index,
-        bool accept) public notOverdueGuard(msg.sender, dueDateExtensionRequests[msg.sender][index].invoice.index, false){
-        if(accept){
-            invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].dueDate = dueDateExtensionRequests[msg.sender][index].newDueDate;
+    function answerDueDateExtensionRequest(uint256 index, bool accept)
+        public
+        notOverdueGuard(msg.sender, dueDateExtensionRequests[msg.sender][index].invoice.index, false)
+    {
+        if (accept) {
+            invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].dueDate =
+                dueDateExtensionRequests[msg.sender][index].newDueDate;
             invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].total = 
                 invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].total + dueDateExtensionRequests[msg.sender][index].fee;
             invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].resellPrice = 
                 invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].resellPrice + dueDateExtensionRequests[msg.sender][index].fee;
         }
         delete dueDateExtensionRequests[msg.sender][index];
-    }
-
-    
+    }    
 }
