@@ -624,7 +624,7 @@ contract SimpleFactoring {
 
     /**
      * @dev recovers the address of the signer from the signed message hash
-     * @param _ethSignedMessagehash the signed message hash
+     * @param _ethSignedMessageHash the signed message hash
      * @param _signature signature of the signer who signed the message
      */
     function recoverSigner(bytes32 _ethSignedMessageHash, bytes memory _signature)
@@ -637,9 +637,9 @@ contract SimpleFactoring {
 
     /**
      * @dev splits the given signature at its r,s, and v parts
-     * @param r 
-     * @param s 
-     * @param v
+     * @param r param r
+     * @param s param s
+     * @param v param v
      */
     function splitSignature(bytes memory sig)
         public pure returns (bytes32 r, bytes32 s, uint8 v)
