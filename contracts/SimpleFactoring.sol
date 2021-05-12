@@ -54,6 +54,7 @@ contract SimpleFactoring {
         _;
     }
 
+    /* solhint-disable not-rely-on-time */
     // Modifier to check if invoice is not overdue
     // Works with offer=true for Offers and offer=false for Invoices
     modifier notOverdueGuard(address sender, uint256 index, bool offer) {
@@ -82,6 +83,7 @@ contract SimpleFactoring {
         }
         _;
     }
+    /* solhint-enable not-rely-on-time */
 
     // Modifier to check if invoice is settled
     // Works with offer=true for Offers and offer=false for Invoices
@@ -248,9 +250,6 @@ contract SimpleFactoring {
         require(invoiceCount >= 1);
         invoiceCount = invoiceCount - 1;
     }
-
-
-
     
     /**
      * @dev Function to calculate price with commission
@@ -302,9 +301,9 @@ contract SimpleFactoring {
         uint256 total,
         uint _nonce,
         bytes memory _signature
-    ) public {  
-        if(checkSignature){
-            require(verify(msg.sender, payer, total, dueDate, total, _nonce, _signature) == true, "Could not verify signature of the message.");
+    ) public {
+        if (checkSignature) {
+            require(verify(msg.sender, payer, total, dueDate, total, _nonce, _signature), "Could not verify signature of the message.");
         }
         createInvoiceForSender(dueDate, payer, total, total);
     }
@@ -315,6 +314,7 @@ contract SimpleFactoring {
      */
     function getOverDueCount() public view returns (uint256 counter_) {
         for (uint256 i = 0; i < invoices[msg.sender].length; i++) {
+            // solhint-disable-next-line not-rely-on-time
             if (invoices[msg.sender][i].dueDate != 0 && invoices[msg.sender][i].dueDate < block.timestamp) {
                 counter_++;
             }
@@ -392,22 +392,21 @@ contract SimpleFactoring {
      * @dev Verifies a signature of the payer on the given invoice
      */
     function verifyInvoicePayerSignature(uint256 index, bytes memory signature, uint _nonce)  public returns (bool){
-        bool verified = verify(msg.sender,
+        bool verified = verify(
+            msg.sender,
             msg.sender,
             signatureRequests[msg.sender][index].total,
             signatureRequests[msg.sender][index].dueDate,
             signatureRequests[msg.sender][index].resellPrice,
             _nonce,
-            signature);
-        if(verified){
+            signature
+        );
+        if (verified) {
             signatureRequests[msg.sender][index].verified = true;
             delete signatureRequests[msg.sender][index];
         }
         return verified;
     }
-
-
-
 
     // Payer methods
 
@@ -568,9 +567,7 @@ contract SimpleFactoring {
                 invoices[msg.sender][dueDateExtensionRequests[msg.sender][index].invoice.index].resellPrice + dueDateExtensionRequests[msg.sender][index].fee;
         }
         delete dueDateExtensionRequests[msg.sender][index];
-    }    
-
-
+    }
 
     /**
      * @dev Returns message hash of the given message details
@@ -580,11 +577,7 @@ contract SimpleFactoring {
      * @param _resellPrice resell price of the invoice
      * @param _nonce nonce value of the given message
      */
-    function getMessageHash(
-        address _from, uint _amount, uint256 _duedate, uint _resellPrice, uint _nonce
-    )
-        public pure returns (bytes32)
-    {
+    function getMessageHash(address _from, uint _amount, uint256 _duedate, uint _resellPrice, uint _nonce) public pure returns (bytes32) {
         return keccak256(abi.encodePacked(_from, _amount, _duedate, _resellPrice, _nonce));
     }
 
@@ -631,7 +624,6 @@ contract SimpleFactoring {
         public pure returns (address)
     {
         (bytes32 r, bytes32 s, uint8 v) = splitSignature(_signature);
-
         return ecrecover(_ethSignedMessageHash, v, r, s);
     }
 
@@ -646,6 +638,7 @@ contract SimpleFactoring {
     {
         require(sig.length == 65, "invalid signature length");
 
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             /*
             First 32 bytes stores the length of the signature
@@ -664,5 +657,4 @@ contract SimpleFactoring {
 
         // implicitly return (r, s, v)
     }
-    
 }
