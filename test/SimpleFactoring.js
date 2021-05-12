@@ -46,7 +46,7 @@ contract('SimpleFactoring', (accounts) => {
     return SimpleFactoring.deployed()
       .then((instance) => {
         sfInstance = instance;
-        return sfInstance.createInvoice(timestamp, accounts[1], web3.utils.toWei('1', 'ether'), { from: accounts[0] });
+        return sfInstance.createInvoice(timestamp, accounts[1], web3.utils.toWei('1', 'ether'),1,"0x00", { from: accounts[0] });
       })
       .then(() => {
         return sfInstance.getInvoices({ from: accounts[0] });
@@ -108,7 +108,7 @@ contract('SimpleFactoring', (accounts) => {
       SimpleFactoring.deployed()
         .then((instance) => {
           sfInstance = instance;
-          return sfInstance.createInvoice(timestamp, accounts[1], web3.utils.toWei('1', 'ether'), {
+          return sfInstance.createInvoice(timestamp, accounts[1], web3.utils.toWei('1', 'ether'),1,"0x00", {
             from: accounts[0],
           });
         })
@@ -186,7 +186,7 @@ contract('SimpleFactoring', (accounts) => {
         // The invoice to be sold
         .then((instance) => {
           sfInstance = instance;
-          return sfInstance.createInvoice(timestamp, accounts[1], web3.utils.toWei('10', 'ether'), {
+          return sfInstance.createInvoice(timestamp, accounts[1], web3.utils.toWei('10', 'ether'),1,"0x00", {
             from: accounts[0],
           });
         })

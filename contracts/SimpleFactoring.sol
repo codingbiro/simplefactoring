@@ -9,7 +9,7 @@ pragma solidity >=0.7.0 <0.9.0;
 contract SimpleFactoring {
     address payable private boss; // Owner of contract
     uint8 public commission = 2; // 2% commission on invoice sales;
-    bool private checkSignature = true;
+    bool private checkSignature = false;
 
     struct Invoice {
         uint256 index; // Index of Invoice = position in array
