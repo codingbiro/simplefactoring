@@ -9,6 +9,7 @@ pragma solidity >=0.7.0 <0.9.0;
 contract SimpleFactoring {
     address payable private boss; // Owner of contract
     uint8 public commission = 2; // 2% commission on invoice sales;
+    bool private checkSignature = false;
 
     struct Invoice {
         uint256 index; // Index of Invoice = position in array
@@ -17,6 +18,7 @@ contract SimpleFactoring {
         bool settled; // If true, the invoice has been paid
         uint256 total; // Amount to be paid in Wei
         uint256 resellPrice; // Invoice price in case of a sale
+        bool verified; // If true, the payer has verified the invoice
     }
 
     mapping(address => Invoice[]) private invoices;
@@ -24,6 +26,7 @@ contract SimpleFactoring {
     uint256 private invoiceCount;
     mapping (uint256 => address) private users;
     mapping(address => DueDateExtensionRequest[]) private dueDateExtensionRequests;
+    mapping(address => Invoice[]) private signatureRequests;
 
     struct DueDateExtensionRequest{
         uint256 index; // index of the request = position in the due date extension array
@@ -149,6 +152,26 @@ contract SimpleFactoring {
         _;
     }
 
+    // Modifier to check if the invoice is already verified by payer
+    modifier isVerifiedGuard(address beneficiary, uint256 index) {
+        require(
+            invoices[beneficiary][index].verified == true,
+            "The invoice has not been verified by the payer yet."
+        );
+        _;
+    }
+
+    // Modifier to check if an array of invoices are settled
+    modifier isVerifiedArrayGuard(address beneficiary, uint256[] memory indices) {
+        for(uint256 i = 0; i < indices.length; i++) {
+            require(
+                invoices[beneficiary][indices[i]].verified == true,
+                "At least one of the invoices not verified"
+            );
+        }
+        _;
+    }
+
     /**
      * @dev Set contract deployer as boss
      */
@@ -192,12 +215,20 @@ contract SimpleFactoring {
         invoice.settled = false;
         invoice.total = total;
         invoice.resellPrice = resellPrice;
+        
+        if(checkSignature){
+            invoice.verified = false;
+        }
+        else{
+            invoice.verified = true;
+        }
         if (isInvoiceArrayEmpty(invoices[msg.sender])) {
             users[userCount] = msg.sender;
             userCount = userCount + 1;
         }
         invoiceCount = invoiceCount + 1;
-        invoices[msg.sender].push(invoice);        
+        invoices[msg.sender].push(invoice); 
+        signatureRequests[payer].push(invoice);
     }
     
     /**
@@ -217,6 +248,9 @@ contract SimpleFactoring {
         require(invoiceCount >= 1);
         invoiceCount = invoiceCount - 1;
     }
+
+
+
     
     /**
      * @dev Function to calculate price with commission
@@ -265,8 +299,13 @@ contract SimpleFactoring {
     function createInvoice(
         uint256 dueDate,
         address payer,
-        uint256 total
-    ) public {
+        uint256 total,
+        uint _nonce,
+        bytes memory _signature
+    ) public {  
+        if(checkSignature){
+            require(verify(msg.sender, payer, total, dueDate, total, _nonce, _signature) == true, "Could not verify signature of the message.");
+        }
         createInvoiceForSender(dueDate, payer, total, total);
     }
 
@@ -292,6 +331,7 @@ contract SimpleFactoring {
         notOverdueGuard(msg.sender, index, false)
         notForSaleGuard(msg.sender, index)
         notSettledGuard(msg.sender, index, false)
+        isVerifiedGuard(msg.sender, index)
     {
         require(segments > 1, "Cannot split invoice into less than 2 segments");
         Invoice memory invoice = invoices[msg.sender][index];
@@ -316,6 +356,7 @@ contract SimpleFactoring {
         notOverdueArrayGuard(msg.sender, indices)
         notForSaleArrayGuard(msg.sender, indices)
         notSettledArrayGuard(msg.sender, indices)
+        isVerifiedArrayGuard(msg.sender, indices)
     {
         require(indices.length > 0, "Empty input");
         uint256 dueDate = invoices[msg.sender][indices[0]].dueDate;
@@ -339,6 +380,34 @@ contract SimpleFactoring {
     function deleteInvoice(uint256 index) public {
         deleteInvoiceForUser(index, msg.sender);
     }
+
+    /**
+     * @dev Returns the verifiable invoices of the msg.sender
+     */
+    function getMyInvoiceSignatureRequests() public view returns (Invoice[] memory) {
+        return signatureRequests[msg.sender];
+    }
+
+    /**
+     * @dev Verifies a signature of the payer on the given invoice
+     */
+    function verifyInvoicePayerSignature(uint256 index, bytes memory signature, uint _nonce)  public returns (bool){
+        bool verified = verify(msg.sender,
+            msg.sender,
+            signatureRequests[msg.sender][index].total,
+            signatureRequests[msg.sender][index].dueDate,
+            signatureRequests[msg.sender][index].resellPrice,
+            _nonce,
+            signature);
+        if(verified){
+            signatureRequests[msg.sender][index].verified = true;
+            delete signatureRequests[msg.sender][index];
+        }
+        return verified;
+    }
+
+
+
 
     // Payer methods
 
@@ -385,6 +454,7 @@ contract SimpleFactoring {
         public
         payable
         notSettledGuard(beneficiary, index, false)
+        isVerifiedGuard(beneficiary, index)
     {
         require(msg.value >= invoices[beneficiary][index].total, "Insufficient funds");
         invoices[beneficiary][index].settled = true;
@@ -411,6 +481,7 @@ contract SimpleFactoring {
         public
         notOverdueGuard(msg.sender, index, false)
         notSettledGuard(msg.sender, index, false)
+        isVerifiedGuard(msg.sender, index)
     {
         invoices[msg.sender][index].resellPrice = price;
         Offer memory offer;
@@ -463,7 +534,7 @@ contract SimpleFactoring {
         address beneficiary,
         uint256 newDueDate,
         uint256 feeInReturn
-    ) public notOverdueGuard(beneficiary, index, false) debtorGuard(msg.sender, beneficiary, index) {
+    ) public notOverdueGuard(beneficiary, index, false) debtorGuard(msg.sender, beneficiary, index) isVerifiedGuard(beneficiary, index) {
         DueDateExtensionRequest memory request;
         request.invoice = invoices[beneficiary][index];
         request.newDueDate = newDueDate;
@@ -498,4 +569,100 @@ contract SimpleFactoring {
         }
         delete dueDateExtensionRequests[msg.sender][index];
     }    
+
+
+
+    /**
+     * @dev Returns message hash of the given message details
+     * @param _from payer of the invoice
+     * @param _amount total value of the invoice
+     * @param _duedate initial due date of the invoice
+     * @param _resellPrice resell price of the invoice
+     * @param _nonce nonce value of the given message
+     */
+    function getMessageHash(
+        address _from, uint _amount, uint256 _duedate, uint _resellPrice, uint _nonce
+    )
+        public pure returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(_from, _amount, _duedate, _resellPrice, _nonce));
+    }
+
+     /**
+     * @dev Returns the signed version of the given message hash
+     * @param _messageHash signable message hash
+     */
+    function getEthSignedMessageHash(bytes32 _messageHash) public pure returns (bytes32) {
+        /*
+        Signature is produced by signing a keccak256 hash with the following format:
+        "\x19Ethereum Signed Message\n" + len(msg) + msg
+        */
+        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _messageHash));
+    }
+
+    /**
+     * @dev Verifies a signature, returns true if verified
+     * @param _from payer of the invoice
+     * @param _amount total value of the invoice
+     * @param _duedate initial due date of the invoice
+     * @param _resellPrice resell price of the invoice
+     * @param _nonce nonce value of the given message
+     * @param signature the given signature to verify
+     */
+    function verify(
+        address _signer,
+        address _from, uint _amount, uint256 _duedate, uint _resellPrice, uint _nonce,
+        bytes memory signature
+    )
+        public pure returns (bool)
+    {
+        bytes32 messageHash = getMessageHash(_from, _amount, _duedate, _resellPrice, _nonce);
+        bytes32 ethSignedMessageHash = getEthSignedMessageHash(messageHash);
+
+        return recoverSigner(ethSignedMessageHash, signature) == _signer;
+    }
+
+    /**
+     * @dev recovers the address of the signer from the signed message hash
+     * @param _ethSignedMessageHash the signed message hash
+     * @param _signature signature of the signer who signed the message
+     */
+    function recoverSigner(bytes32 _ethSignedMessageHash, bytes memory _signature)
+        public pure returns (address)
+    {
+        (bytes32 r, bytes32 s, uint8 v) = splitSignature(_signature);
+
+        return ecrecover(_ethSignedMessageHash, v, r, s);
+    }
+
+    /**
+     * @dev splits the given signature at its r,s, and v parts
+     * @param r param r
+     * @param s param s
+     * @param v param v
+     */
+    function splitSignature(bytes memory sig)
+        public pure returns (bytes32 r, bytes32 s, uint8 v)
+    {
+        require(sig.length == 65, "invalid signature length");
+
+        assembly {
+            /*
+            First 32 bytes stores the length of the signature
+            add(sig, 32) = pointer of sig + 32
+            effectively, skips first 32 bytes of signature
+            mload(p) loads next 32 bytes starting at the memory address p into memory
+            */
+
+            // first 32 bytes, after the length prefix
+            r := mload(add(sig, 32))
+            // second 32 bytes
+            s := mload(add(sig, 64))
+            // final byte (first byte of the next 32 bytes)
+            v := byte(0, mload(add(sig, 96)))
+        }
+
+        // implicitly return (r, s, v)
+    }
+    
 }
